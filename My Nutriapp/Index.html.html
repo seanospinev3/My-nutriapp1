@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NutriScore Analyser — FOP Rating 2023</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a1628;color:#e2e8f0;font-family:'Nunito','Segoe UI',sans-serif}
+  input:focus{outline:none;border-color:#00d4aa!important}
+  input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:#1e3a5f}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#00d4aa;cursor:pointer}
+  .cbtn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(0,212,170,0.4)!important}
+  .tbtn:hover{background:rgba(0,212,170,0.12)!important}
+  .sbtn:hover{border-color:#00d4aa!important;background:rgba(0,212,170,0.1)!important}
+  .vbtn:hover{border-color:#a78bfa!important;background:rgba(167,139,250,0.1)!important}
+  .wh{border-left:4px solid #e74c3c!important}
+  .wm{border-left:4px solid #f39c12!important}
+  .wl{border-left:4px solid #f1c40f!important}
+  .aic h2{font-size:.9rem;color:#00d4aa;margin:.9rem 0 .25rem;font-family:'Syne',sans-serif}
+  .aic ul{margin:.25rem 0 .4rem 1.1rem}
+  .aic li{margin:.2rem 0;line-height:1.5}
+  .aic p{margin:.25rem 0;line-height:1.55}
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
+  @keyframes scanline{0%,100%{top:15%}50%{top:82%}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  .fadein{animation:fadein 0.35s ease}
+  .pulsing{animation:pulse 1.4s ease-in-out infinite}
+  /* Shutter button */
+  .shutter{width:70px;height:70px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.3);cursor:pointer;position:relative;transition:transform 0.1s}
+  .shutter:active{transform:scale(0.92)}
+  .shutter::after{content:'';position:absolute;inset:6px;border-radius:50%;background:#e2e8f0}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect,useCallback}=React;
+
+/* ═══ NUTRI-SCORE 2023 ENGINE ═══ */
+function negPts(v,t,inc,max){if(v<=t)return 0;return Math.min(max,Math.floor((v-t)/inc)+1);}
+function fvPts(pct,isBev=false){if(pct<=40)return 0;if(isBev){if(pct<=60)return 2;if(pct<=80)return 4;return 6;}if(pct<=60)return 1;if(pct<=80)return 2;return 5;}
+function calcScore(inp,cat){
+  const kcal=parseFloat(inp.energyKcal)||0,sg=parseFloat(inp.sugars)||0,sf=parseFloat(inp.saturatedFat)||0;
+  const salt=parseFloat(inp.salt)||0,pro=parseFloat(inp.protein)||0,fib=parseFloat(inp.fiber)||0;
+  const fv=parseFloat(inp.fruitsVeg)||0,kj=kcal*4.184;
+  if(cat==="beverages"){
+    let eP=0;[30,90,150,210,270,330,390].forEach((s,i)=>{if(kj>s)eP=i+1;});if(kj>390)eP=10;
+    let sP=0;[0.5,1,2,3,4.5,6,7.5,9,11].forEach((s,i)=>{if(sg>s)sP=i+1;});if(sg>11)sP=10;
+    const sfP=negPts(sf,1,1,10),saltP=negPts(salt,0.2,0.2,20),nnsP=inp.hasNNS?4:0;
+    const N=eP+sP+sfP+saltP+nnsP,protP=negPts(pro,1.2,0.3,7),fibP=negPts(fib,3,1.1,5),fvP2=fvPts(fv,true);
+    const P=protP+fibP+fvP2,fs=N-P;
+    let g;if(inp.isWater)g="A";else if(fs<=2)g="B";else if(fs<=6)g="C";else if(fs<=9)g="D";else g="E";
+    return{finalScore:fs,N,P,grade:g,neg:{energy:eP,sugars:sP,saturatedFat:sfP,salt:saltP,nns:nnsP},pos:{protein:protP,fiber:fibP,fruitsVeg:fvP2}};
+  }
+  const eP=negPts(kj,335,335,10),sP=negPts(sg,3.4,3.4,15),sfP=negPts(sf,1,1,10),saltP=negPts(salt,0.2,0.2,20),N=eP+sP+sfP+saltP;
+  const protP=negPts(pro,2.4,2.4,7),fibP=negPts(fib,3,1.1,5),fvP2=fvPts(fv);
+  const P=protP+fibP+fvP2,usedP=N>=11?fibP+fvP2:P,fs=N-usedP;
+  let g;if(fs<=0)g="A";else if(fs<=2)g="B";else if(fs<=10)g="C";else if(fs<=18)g="D";else g="E";
+  return{finalScore:fs,N,P,usedP,grade:g,neg:{energy:eP,sugars:sP,saturatedFat:sfP,salt:saltP},pos:{protein:protP,fiber:fibP,fruitsVeg:fvP2}};
+}
+function getWarns(inp,cat){
+  const kcal=parseFloat(inp.energyKcal)||0,sg=parseFloat(inp.sugars)||0;
+  const sf=parseFloat(inp.saturatedFat)||0,salt=parseFloat(inp.salt)||0;
+  const tf=parseFloat(inp.totalFat)||0,na=(salt/2.54)*1000,isBev=cat==="beverages";
+  const T=isBev?{kcal:70,na:100,sg:5,sf:3,tf:10}:{kcal:275,na:400,sg:10,sf:4,tf:17};
+  const w=[];
+  if(kcal>T.kcal)w.push({id:"e",icon:"🔥",label:"High Calories",val:`${Math.round(kcal)}kcal`,limit:`>${T.kcal}kcal`,risk:"Weight gain & obesity",level:kcal>T.kcal*1.5?"high":"medium"});
+  if(na>T.na)w.push({id:"na",icon:"🧂",label:"High Sodium",val:`${Math.round(na)}mg`,limit:`>${T.na}mg`,risk:"Hypertension, cardiovascular disease",level:na>T.na*1.5?"high":"medium"});
+  if(sg>T.sg)w.push({id:"s",icon:"🍬",label:"High Sugar",val:`${sg}g`,limit:`>${T.sg}g`,risk:"Type 2 diabetes, dental decay",level:sg>T.sg*2?"high":"medium"});
+  if(sf>T.sf)w.push({id:"sf",icon:"🫀",label:"High Sat. Fat",val:`${sf}g`,limit:`>${T.sf}g`,risk:"Elevated LDL, heart disease",level:sf>T.sf*1.5?"high":"medium"});
+  if(tf>T.tf)w.push({id:"tf",icon:"⚠️",label:"High Total Fat",val:`${tf}g`,limit:`>${T.tf}g`,risk:"Weight gain if overconsumed",level:"low"});
+  return w;
+}
+
+/* ═══ OPEN FOOD FACTS ═══ */
+async function fetchBarcode(code){
+  const r=await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+  if(!r.ok)throw new Error("Network error");
+  const d=await r.json();if(d.status!==1)throw new Error("Not found");
+  const p=d.product,n=p.nutriments||{};
+  const cats=(p.categories||"").toLowerCase();
+  const isBev=/beverage|drink|juice|soda|water|tea|coffee/.test(cats);
+  const isFat=/oil|butter|margarine|lard/.test(cats);
+  return{name:p.product_name||"Unknown Product",brand:p.brands||"",imageUrl:p.image_front_small_url||"",nutriscore_grade:p.nutriscore_grade?.toUpperCase()||null,category:isFat?"fats":isBev?"beverages":"general",
+    inputs:{energyKcal:String(Math.round(n["energy-kcal_100g"]||(n["energy_100g"]||0)/4.184||0)),totalFat:String(((n["fat_100g"]||0)).toFixed(1)),saturatedFat:String(((n["saturated-fat_100g"]||0)).toFixed(1)),sugars:String(((n["sugars_100g"]||0)).toFixed(1)),salt:String(((n["salt_100g"]||(n["sodium_100g"]||0)*2.54||0)).toFixed(2)),protein:String(((n["proteins_100g"]||0)).toFixed(1)),fiber:String(((n["fiber_100g"]||0)).toFixed(1)),fruitsVeg:String(Math.round(n["fruits-vegetables-nuts-estimate-from-ingredients_100g"]||0)),hasNNS:(p.ingredients_text||"").toLowerCase().includes("sweetener"),isWater:(p.product_name||"").toLowerCase().includes("water")}};
+}
+
+/* ═══ CLAUDE VISION — analyse food photo ═══ */
+async function analyseFood(base64Jpeg){
+  const res=await fetch("/.netlify/functions/claude",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:"claude-sonnet-4-20250514",max_tokens:1000,
+      messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64Jpeg}},
+        {type:"text",text:`You are a nutrition expert. Identify the food in this image and estimate its nutritional content per 100g.
+
+Return ONLY a valid JSON object — no explanation, no markdown, no extra text:
+{
+  "foodName": "descriptive food name",
+  "brand": "brand if visible on packaging, else empty string",
+  "category": "general" or "beverages" or "fats",
+  "confidence": "high" or "medium" or "low",
+  "energyKcal": number,
+  "totalFat": number,
+  "saturatedFat": number,
+  "sugars": number,
+  "salt": number,
+  "protein": number,
+  "fiber": number,
+  "fruitsVeg": number (0-100, % of fruits/vegetables/legumes/nuts),
+  "hasNNS": boolean (true if artificial sweeteners present),
+  "isWater": boolean,
+  "notes": "one sentence about accuracy or key assumptions"
+}
+
+If no food is visible, return: {"error":"No food detected in image"}
+If it is a packaged food with a nutrition label visible, read the label values directly.`}
+      ]}]
+    })
+  });
+  const data=await res.json();
+  const text=data.content?.map(c=>c.text||"").join("")||"{}";
+  const clean=text.replace(/```json|```/g,"").trim();
+  return JSON.parse(clean);
+}
+
+/* ═══ FOOD VISION SCANNER ═══ */
+function FoodVisionScanner({onResult,onClose}){
+  const videoRef=useRef(null),canvasRef=useRef(null),streamRef=useRef(null);
+  const [phase,setPhase]=useState("live"); // live | preview | analysing | done | error
+  const [capturedB64,setCapturedB64]=useState(null);
+  const [capturedUrl,setCapturedUrl]=useState(null);
+  const [analysisResult,setAnalysisResult]=useState(null);
+  const [errMsg,setErrMsg]=useState("");
+  const [camErr,setCamErr]=useState("");
+
+  const stopCam=useCallback(()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());},[]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function startCam(){
+      try{
+        const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
+        if(cancelled){s.getTracks().forEach(t=>t.stop());return;}
+        streamRef.current=s;
+        if(videoRef.current){videoRef.current.srcObject=s;await videoRef.current.play();}
+      }catch(e){if(!cancelled)setCamErr(e.name==="NotAllowedError"?"Camera access denied. Please allow camera and reload.":"Could not open camera: "+e.message);}
+    }
+    startCam();
+    return()=>{cancelled=true;stopCam();};
+  },[]);
+
+  const capture=()=>{
+    if(!videoRef.current)return;
+    const v=videoRef.current;
+    const canvas=canvasRef.current;
+    canvas.width=v.videoWidth;canvas.height=v.videoHeight;
+    canvas.getContext("2d").drawImage(v,0,0);
+    const dataUrl=canvas.toDataURL("image/jpeg",0.85);
+    const b64=dataUrl.split(",")[1];
+    setCapturedB64(b64);setCapturedUrl(dataUrl);
+    setPhase("preview");stopCam();
+  };
+
+  const analyse=async()=>{
+    setPhase("analysing");setErrMsg("");
+    try{
+      const result=await analyseFood(capturedB64);
+      if(result.error){setErrMsg(result.error);setPhase("error");return;}
+      setAnalysisResult(result);setPhase("done");
+    }catch(e){setErrMsg("AI analysis failed: "+e.message);setPhase("error");}
+  };
+
+  const retake=()=>{
+    setCapturedB64(null);setCapturedUrl(null);setAnalysisResult(null);setPhase("live");
+    // restart cam
+    navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(s=>{
+      streamRef.current=s;if(videoRef.current){videoRef.current.srcObject=s;videoRef.current.play();}
+    }).catch(()=>{});
+  };
+
+  const accept=()=>{
+    if(!analysisResult)return;
+    onResult({
+      name:analysisResult.foodName,brand:analysisResult.brand||"",
+      imageUrl:capturedUrl,category:analysisResult.category||"general",
+      confidence:analysisResult.confidence,notes:analysisResult.notes,
+      inputs:{
+        energyKcal:String(analysisResult.energyKcal||0),
+        totalFat:String(analysisResult.totalFat||0),
+        saturatedFat:String(analysisResult.saturatedFat||0),
+        sugars:String(analysisResult.sugars||0),
+        salt:String(analysisResult.salt||0),
+        protein:String(analysisResult.protein||0),
+        fiber:String(analysisResult.fiber||0),
+        fruitsVeg:String(analysisResult.fruitsVeg||0),
+        hasNNS:analysisResult.hasNNS||false,
+        isWater:analysisResult.isWater||false,
+      }
+    });
+  };
+
+  const confColor={high:"#00d4aa",medium:"#f39c12",low:"#e74c3c"};
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(5,10,20,0.98)",zIndex:9999,display:"flex",flexDirection:"column"}}>
+      <canvas ref={canvasRef} style={{display:"none"}}/>
+
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"1px solid #1e3a5f",flexShrink:0,background:"rgba(0,0,0,0.4)"}}>
+        <div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"1.05rem",fontWeight:800,color:"#fff"}}>
+            {phase==="live"?"📸 Point at Food":phase==="preview"?"🔍 Confirm Shot":phase==="analysing"?"🤖 AI Analysing…":phase==="done"?"✅ Food Identified":"⚠️ Error"}
+          </div>
+          <div style={{fontSize:"0.65rem",color:"#7eb3d4",marginTop:1}}>
+            {phase==="live"?"Steady shot · good lighting · 20-40cm away":phase==="preview"?"Food clearly visible? Tap Analyse":phase==="analysing"?"Claude Vision reading nutrients…":phase==="done"?"Review & accept to populate fields":""}
+          </div>
+        </div>
+        <button onClick={()=>{stopCam();onClose();}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #1e3a5f",borderRadius:8,padding:"6px 14px",color:"#fff",cursor:"pointer",fontWeight:700}}>✕</button>
+      </div>
+
+      {/* Camera / Preview area */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"16px",gap:14,overflowY:"auto"}}>
+
+        {/* LIVE viewfinder */}
+        {(phase==="live")&&(
+          <>
+            {camErr?(
+              <div style={{textAlign:"center",padding:20}}>
+                <div style={{fontSize:"3rem",marginBottom:12}}>🚫</div>
+                <div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>Camera Error</div>
+                <div style={{color:"#7eb3d4",fontSize:"0.75rem"}}>{camErr}</div>
+              </div>
+            ):(
+              <div style={{position:"relative",width:"100%",maxWidth:420,borderRadius:18,overflow:"hidden",background:"#000",aspectRatio:"4/3",boxShadow:"0 0 40px rgba(167,139,250,0.3)"}}>
+                <video ref={videoRef} muted playsInline autoPlay style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+                {/* Focus overlay */}
+                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                  <div style={{width:"60%",aspectRatio:"1",border:"2px solid rgba(167,139,250,0.7)",borderRadius:16,boxShadow:"0 0 0 2000px rgba(0,0,0,0.25)"}}>
+                    {[{top:0,left:0},{top:0,right:0},{bottom:0,left:0},{bottom:0,right:0}].map((pos,i)=>{
+                      const isRight="right" in pos,isBottom="bottom" in pos;
+                      return <div key={i} style={{position:"absolute",width:20,height:20,...pos,borderTop:isBottom?"none":"3px solid #a78bfa",borderBottom:isBottom?"3px solid #a78bfa":"none",borderLeft:isRight?"none":"3px solid #a78bfa",borderRight:isRight?"3px solid #a78bfa":"none"}}/>;
+                    })}
+                  </div>
+                </div>
+                <div style={{position:"absolute",bottom:10,left:0,right:0,textAlign:"center",fontSize:"0.65rem",color:"rgba(255,255,255,0.6)"}}>Centre food in frame</div>
+              </div>
+            )}
+            {!camErr&&<button className="shutter" onClick={capture} title="Capture"/>}
+            <div style={{fontSize:"0.7rem",color:"#4a8ab0",textAlign:"center"}}>Works on packaged food, fresh food, meals & drinks</div>
+          </>
+        )}
+
+        {/* PREVIEW */}
+        {phase==="preview"&&capturedUrl&&(
+          <>
+            <div style={{position:"relative",width:"100%",maxWidth:420,borderRadius:18,overflow:"hidden",boxShadow:"0 0 30px rgba(167,139,250,0.2)"}}>
+              <img src={capturedUrl} alt="captured" style={{width:"100%",display:"block",borderRadius:18}}/>
+              <div style={{position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.6)",borderRadius:8,padding:"4px 10px",fontSize:"0.68rem",color:"#fff"}}>Preview</div>
+            </div>
+            <div style={{display:"flex",gap:10,width:"100%",maxWidth:420}}>
+              <button onClick={retake} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid #1e3a5f",borderRadius:12,padding:"13px",color:"#8aa4bf",fontSize:"0.85rem",fontWeight:700,cursor:"pointer"}}>↩ Retake</button>
+              <button onClick={analyse} style={{flex:2,background:"linear-gradient(135deg,#7c3aed,#a78bfa)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontSize:"0.85rem",fontWeight:800,cursor:"pointer",fontFamily:"'Syne',sans-serif"}}>🤖 Analyse with AI →</button>
+            </div>
+          </>
+        )}
+
+        {/* ANALYSING */}
+        {phase==="analysing"&&(
+          <div style={{textAlign:"center",padding:20}}>
+            {capturedUrl&&<img src={capturedUrl} alt="analysing" style={{width:120,height:120,objectFit:"cover",borderRadius:16,marginBottom:16,border:"2px solid #7c3aed",opacity:0.7}}/>}
+            <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:14}}>
+              {[0,1,2].map(i=><div key={i} className="pulsing" style={{width:10,height:10,borderRadius:"50%",background:"#a78bfa",animationDelay:`${i*0.2}s`}}/>)}
+            </div>
+            <div style={{color:"#a78bfa",fontWeight:700,fontSize:"0.9rem",marginBottom:6}}>Claude Vision is reading the food…</div>
+            <div style={{color:"#4a8ab0",fontSize:"0.72rem"}}>Identifying nutrients, ingredients & category</div>
+          </div>
+        )}
+
+        {/* DONE */}
+        {phase==="done"&&analysisResult&&(
+          <div style={{width:"100%",maxWidth:420}} className="fadein">
+            {capturedUrl&&<img src={capturedUrl} alt="food" style={{width:"100%",borderRadius:14,marginBottom:12,maxHeight:160,objectFit:"cover",border:"1px solid #1e3a5f"}}/>}
+
+            {/* ID card */}
+            <div style={{background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.3)",borderRadius:14,padding:"14px",marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,color:"#fff",fontSize:"1rem"}}>{analysisResult.foodName}</div>
+                  {analysisResult.brand&&<div style={{fontSize:"0.7rem",color:"#7eb3d4"}}>{analysisResult.brand}</div>}
+                </div>
+                <span style={{background:`${confColor[analysisResult.confidence]}20`,color:confColor[analysisResult.confidence],fontSize:"0.65rem",fontWeight:800,padding:"3px 8px",borderRadius:6,border:`1px solid ${confColor[analysisResult.confidence]}40`,flexShrink:0,marginLeft:8}}>
+                  {analysisResult.confidence?.toUpperCase()} CONF.
+                </span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                {[
+                  {l:"Energy",v:`${analysisResult.energyKcal} kcal`,c:"#f87171"},
+                  {l:"Total Fat",v:`${analysisResult.totalFat}g`,c:"#fbbf24"},
+                  {l:"Sat. Fat",v:`${analysisResult.saturatedFat}g`,c:"#f97316"},
+                  {l:"Sugars",v:`${analysisResult.sugars}g`,c:"#e879f9"},
+                  {l:"Salt",v:`${analysisResult.salt}g`,c:"#60a5fa"},
+                  {l:"Protein",v:`${analysisResult.protein}g`,c:"#34d399"},
+                  {l:"Fiber",v:`${analysisResult.fiber}g`,c:"#00d4aa"},
+                  {l:"Fruits/Veg",v:`${analysisResult.fruitsVeg}%`,c:"#86efac"},
+                ].map(n=>(
+                  <div key={n.l} style={{background:"rgba(0,0,0,0.25)",borderRadius:8,padding:"7px 9px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:"0.65rem",color:"#8aa4bf"}}>{n.l}</span>
+                    <span style={{fontSize:"0.75rem",fontWeight:800,color:n.c}}>{n.v}</span>
+                  </div>
+                ))}
+              </div>
+              {analysisResult.notes&&<div style={{marginTop:10,fontSize:"0.65rem",color:"#4a8ab0",background:"rgba(0,0,0,0.2)",borderRadius:7,padding:"6px 8px"}}>ⓘ {analysisResult.notes}</div>}
+            </div>
+
+            {analysisResult.confidence==="low"&&(
+              <div style={{background:"rgba(243,156,18,0.08)",border:"1px solid rgba(243,156,18,0.3)",borderRadius:10,padding:"9px 12px",marginBottom:12,fontSize:"0.7rem",color:"#f39c12"}}>
+                ⚠️ Low confidence — values are estimates. Review & adjust manually after accepting.
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={retake} style={{flex:1,background:"rgba(255,255,255,0.05)",border:"1px solid #1e3a5f",borderRadius:12,padding:"13px",color:"#8aa4bf",fontSize:"0.82rem",fontWeight:700,cursor:"pointer"}}>↩ Retake</button>
+              <button onClick={accept} style={{flex:2,background:"linear-gradient(135deg,#00d4aa,#00b4d8)",border:"none",borderRadius:12,padding:"13px",color:"#001f3f",fontSize:"0.85rem",fontWeight:800,cursor:"pointer",fontFamily:"'Syne',sans-serif"}}>✓ Use These Values →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ERROR */}
+        {phase==="error"&&(
+          <div style={{textAlign:"center",padding:20}}>
+            <div style={{fontSize:"3rem",marginBottom:12}}>😕</div>
+            <div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>Analysis Failed</div>
+            <div style={{color:"#7eb3d4",fontSize:"0.75rem",marginBottom:16,maxWidth:280}}>{errMsg}</div>
+            <button onClick={retake} style={{background:"rgba(167,139,250,0.15)",border:"1px solid #a78bfa",borderRadius:10,padding:"10px 20px",color:"#a78bfa",cursor:"pointer",fontWeight:700}}>↩ Try Again</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ BARCODE SCANNER ═══ */
+function BarcodeScanner({onDetect,onClose}){
+  const videoRef=useRef(null),streamRef=useRef(null),rafRef=useRef(null);
+  const [status,setStatus]=useState("starting"),[manual,setManual]=useState(""),[tab,setTab]=useState("camera");
+  const hasBD="BarcodeDetector" in window;
+  const stop=useCallback(()=>{if(rafRef.current)cancelAnimationFrame(rafRef.current);if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());},[]);
+  useEffect(()=>{
+    if(tab!=="camera"){stop();return;}
+    let cancelled=false;
+    async function go(){
+      try{
+        const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+        if(cancelled){s.getTracks().forEach(t=>t.stop());return;}
+        streamRef.current=s;if(videoRef.current){videoRef.current.srcObject=s;await videoRef.current.play();}
+        if(!hasBD){setStatus("no-bd");return;}
+        const bd=new window.BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]});
+        setStatus("scanning");
+        const loop=async()=>{
+          if(!videoRef.current||cancelled)return;
+          try{const codes=await bd.detect(videoRef.current);if(codes.length){stop();onDetect(codes[0].rawValue);return;}}catch{}
+          rafRef.current=requestAnimationFrame(loop);
+        };loop();
+      }catch(e){if(!cancelled)setStatus(e.name==="NotAllowedError"?"denied":"error");}
+    }
+    go();return()=>{cancelled=true;stop();};
+  },[tab]);
+  const SAMPLES=[{l:"Maggi 2-min Noodles",c:"8901030985782"},{l:"Britannia Marie Gold",c:"8901063111813"},{l:"Coca-Cola 330ml",c:"5449000000996"},{l:"Kellogg's Corn Flakes",c:"5010029212882"},{l:"Quaker Oats",c:"030000011782"},{l:"Nutella 400g",c:"3017620425035"}];
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(5,10,20,0.98)",zIndex:9999,display:"flex",flexDirection:"column",overflowY:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"1px solid #1e3a5f",flexShrink:0}}>
+        <div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"1.05rem",fontWeight:800,color:"#fff"}}>📦 Barcode Scanner</div><div style={{fontSize:"0.65rem",color:"#7eb3d4"}}>Scan pack barcode → fetches exact nutrition data</div></div>
+        <button onClick={()=>{stop();onClose();}} style={{background:"rgba(255,255,255,0.08)",border:"1px solid #1e3a5f",borderRadius:8,padding:"6px 14px",color:"#fff",cursor:"pointer",fontWeight:700}}>✕</button>
+      </div>
+      <div style={{display:"flex",borderBottom:"1px solid #1e3a5f",flexShrink:0}}>
+        {[{id:"camera",l:"📷 Camera"},{id:"manual",l:"⌨️ Manual"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"10px",background:tab===t.id?"rgba(0,212,170,0.12)":"transparent",border:"none",borderBottom:tab===t.id?"2px solid #00d4aa":"2px solid transparent",color:tab===t.id?"#00d4aa":"#7eb3d4",fontSize:"0.78rem",fontWeight:700,cursor:"pointer"}}>{t.l}</button>
+        ))}
+      </div>
+      {tab==="camera"&&(
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px 16px"}}>
+          {status==="denied"&&<div style={{textAlign:"center"}}><div style={{fontSize:"3rem",marginBottom:12}}>🚫</div><div style={{color:"#e74c3c",fontWeight:700,marginBottom:8}}>Camera Denied</div><button onClick={()=>setTab("manual")} style={{background:"rgba(0,212,170,0.15)",border:"1px solid #00d4aa",borderRadius:8,padding:"9px 18px",color:"#00d4aa",cursor:"pointer",fontWeight:700}}>Enter Manually →</button></div>}
+          {status==="no-bd"&&<div style={{textAlign:"center"}}><div style={{fontSize:"3rem",marginBottom:12}}>🌐</div><div style={{color:"#f39c12",fontWeight:700,marginBottom:8}}>Browser Not Supported</div><div style={{color:"#7eb3d4",fontSize:"0.74rem",marginBottom:12}}>BarcodeDetector needs Chrome on Android/Desktop</div><button onClick={()=>setTab("manual")} style={{background:"rgba(0,212,170,0.15)",border:"1px solid #00d4aa",borderRadius:8,padding:"9px 18px",color:"#00d4aa",cursor:"pointer",fontWeight:700}}>Enter Manually →</button></div>}
+          {(status==="scanning"||status==="starting")&&(
+            <><div style={{position:"relative",width:"100%",maxWidth:380,borderRadius:16,overflow:"hidden",background:"#000",aspectRatio:"4/3"}}>
+              <video ref={videoRef} muted playsInline autoPlay style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+                <div style={{position:"relative",width:"72%",height:120}}>
+                  {[[{top:0,left:0},"borderTop","borderLeft"],[{top:0,right:0},"borderTop","borderRight"],[{bottom:0,left:0},"borderBottom","borderLeft"],[{bottom:0,right:0},"borderBottom","borderRight"]].map(([pos,b1,b2],i)=>(
+                    <div key={i} style={{position:"absolute",width:22,height:22,...pos,[b1]:"3px solid #00d4aa",[b2]:"3px solid #00d4aa"}}/>
+                  ))}
+                  <div style={{position:"absolute",top:"50%",left:4,right:4,height:2,background:"linear-gradient(90deg,transparent,#00d4aa,transparent)",animation:"scanline 2s ease-in-out infinite"}}/>
+                </div>
+              </div>
+            </div>
+            {status==="scanning"&&<div style={{marginTop:12,textAlign:"center"}}><div style={{color:"#00d4aa",fontWeight:700,fontSize:"0.85rem"}}>🔍 Scanning…</div><div style={{color:"#4a8ab0",fontSize:"0.68rem",marginTop:4}}>15–30cm · steady · good light</div></div>}</>
+          )}
+        </div>
+      )}
+      {tab==="manual"&&(
+        <div style={{flex:1,padding:"20px 16px"}}>
+          <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:"2rem",marginBottom:8}}>🏷️</div><div style={{color:"#7eb3d4",fontSize:"0.72rem"}}>Type number printed beneath the bars</div></div>
+          <input type="text" inputMode="numeric" placeholder="e.g. 8901030937544" value={manual} onChange={e=>setManual(e.target.value.replace(/\D/g,""))} onKeyDown={e=>e.key==="Enter"&&manual.length>=6&&onDetect(manual.trim())}
+            style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid #1e3a5f",borderRadius:12,padding:"14px 16px",color:"#fff",fontSize:"1.1rem",letterSpacing:4,textAlign:"center",outline:"none",marginBottom:10,fontFamily:"monospace"}} autoFocus/>
+          <button onClick={()=>manual.length>=6&&onDetect(manual.trim())} disabled={manual.length<6}
+            style={{width:"100%",background:manual.length>=6?"linear-gradient(135deg,#00d4aa,#00b4d8)":"rgba(0,212,170,0.12)",border:"none",borderRadius:12,padding:14,color:manual.length>=6?"#001f3f":"#4a8ab0",fontSize:"0.9rem",fontWeight:800,cursor:manual.length>=6?"pointer":"not-allowed",fontFamily:"'Syne',sans-serif",marginBottom:18}}>LOOK UP →</button>
+          <div style={{fontSize:"0.66rem",color:"#3a6080",textAlign:"center",marginBottom:8,letterSpacing:1}}>SAMPLE PRODUCTS</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+            {SAMPLES.map(s=>(<button key={s.c} onClick={()=>{setManual(s.c);setTimeout(()=>onDetect(s.c),80);}} style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1e3a5f",borderRadius:9,padding:"9px 8px",cursor:"pointer",textAlign:"left"}}><div style={{fontSize:"0.67rem",color:"#7eb3d4",fontWeight:700,marginBottom:2}}>{s.l}</div><div style={{fontSize:"0.59rem",color:"#3a6080",fontFamily:"monospace"}}>{s.c}</div></button>))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══ CONSTANTS ═══ */
+const GRADES={A:{bg:"#00803e",text:"#fff",emoji:"🟢",label:"Excellent",desc:"Best nutritional quality — choose freely"},B:{bg:"#84b82c",text:"#fff",emoji:"💚",label:"Good",desc:"Good nutritional quality — good choice"},C:{bg:"#e5b800",text:"#1a1a1a",emoji:"🟡",label:"Moderate",desc:"Average quality — consume in moderation"},D:{bg:"#e77926",text:"#fff",emoji:"🟠",label:"Poor",desc:"Below average — limit consumption"},E:{bg:"#c0392b",text:"#fff",emoji:"🔴",label:"Unhealthy",desc:"Poor nutritional quality — minimize intake"}};
+const NCFG=[{key:"energyKcal",label:"Energy",unit:"kcal",ph:"e.g. 250",type:"neg"},{key:"totalFat",label:"Total Fat",unit:"g",ph:"e.g. 12",type:"neg"},{key:"saturatedFat",label:"Saturated Fat",unit:"g",ph:"e.g. 4",type:"neg"},{key:"sugars",label:"Sugars",unit:"g",ph:"e.g. 8",type:"neg"},{key:"salt",label:"Salt",unit:"g",ph:"e.g. 0.5",type:"neg"},{key:"protein",label:"Protein",unit:"g",ph:"e.g. 5",type:"pos"},{key:"fiber",label:"Fiber",unit:"g",ph:"e.g. 2",type:"pos"}];
+const EMPTY={energyKcal:"",totalFat:"",saturatedFat:"",sugars:"",salt:"",protein:"",fiber:"",fruitsVeg:"0",hasNNS:false,isWater:false};
+const TABS=[{id:"score",icon:"📊",label:"Score"},{id:"nutrients",icon:"🧪",label:"Nutrients"},{id:"warnings",icon:"⚠️",label:"Warnings"},{id:"ai",icon:"🤖",label:"AI Advisor"}];
+
+/* ═══ MAIN APP ═══ */
+function App(){
+  const [cat,setCat]=useState("general"),[inputs,setInputs]=useState(EMPTY);
+  const [result,setResult]=useState(null),[warns,setWarns]=useState([]);
+  const [aiRec,setAiRec]=useState(""),[aiLoad,setAiLoad]=useState(false);
+  const [tab,setTab]=useState("score"),[calcd,setCalcd]=useState(false);
+  const [scanMode,setScanMode]=useState(null); // null | "vision" | "barcode"
+  const [scanLoad,setScanLoad]=useState(false),[scanErr,setScanErr]=useState("");
+  const [product,setProduct]=useState(null);
+
+  const hi=(k,v)=>setInputs(p=>({...p,[k]:v}));
+  const doCalc=(inp=inputs,c=cat)=>{setResult(calcScore(inp,c));setWarns(getWarns(inp,c));setCalcd(true);setTab("score");setAiRec("");};
+
+  // Vision scan result
+  const onVisionResult=(prod)=>{
+    setScanMode(null);setInputs(prod.inputs);setCat(prod.category);setProduct({...prod,source:"vision"});
+    doCalc(prod.inputs,prod.category);
+  };
+
+  // Barcode scan result
+  const onBarcode=async(code)=>{
+    setScanMode(null);setScanLoad(true);setScanErr("");setProduct(null);
+    try{const prod=await fetchBarcode(code);setInputs(prod.inputs);setCat(prod.category);setProduct({...prod,source:"barcode"});setScanLoad(false);doCalc(prod.inputs,prod.category);}
+    catch(e){setScanLoad(false);setScanErr(`Product "${code}" not found. Try another or enter manually.`);}
+  };
+
+  const doAI=async()=>{
+    if(!result)return;setAiLoad(true);setAiRec("");setTab("ai");
+    const prof=`Product: ${product?product.name+(product.brand?" ("+product.brand+")":""):"Manual Entry"}
+Source: ${product?.source==="vision"?"AI Vision Scan":product?.source==="barcode"?"Barcode Lookup":"Manual"}
+Category: ${cat} | Grade: ${result.grade} (${GRADES[result.grade].label}, score ${result.finalScore})
+Per 100g: Energy ${inputs.energyKcal||0}kcal | Fat ${inputs.totalFat||0}g | Sat.Fat ${inputs.saturatedFat||0}g | Sugars ${inputs.sugars||0}g | Salt ${inputs.salt||0}g | Protein ${inputs.protein||0}g | Fiber ${inputs.fiber||0}g | Fruits/Veg ${inputs.fruitsVeg||0}%
+Warnings: ${warns.length?warns.map(w=>w.label).join(", "):"None"}`;
+    try{
+      const r=await fetch("/.netlify/functions/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a clinical nutrition expert. Analyze this food and provide structured guidance.\n\n${prof}\n\nProvide:\n## 🩺 Health Assessment\n2-3 sentences on overall quality.\n\n## ⚠️ Key Health Concerns\nBullet points with disease links.\n\n## ✅ Nutritional Benefits\nPositive aspects.\n\n## 🔄 Better Alternatives\n3 healthier options with one-line reasons.\n\n## 📏 Serving Advice\nPractical portion guidance.`}]})});
+      const d=await r.json();setAiRec(d.content?.map(c=>c.text||"").join("")||"No response.");
+    }catch{setAiRec("⚠️ AI service unavailable.");}
+    setAiLoad(false);
+  };
+
+  const gi=result?GRADES[result.grade]:null;
+
+  return(
+    <div style={{fontFamily:"'Nunito','Segoe UI',sans-serif",background:"linear-gradient(135deg,#0a1628,#0d2137 50%,#071523)",minHeight:"100vh",color:"#e2e8f0"}}>
+      {scanMode==="vision"&&<FoodVisionScanner onResult={onVisionResult} onClose={()=>setScanMode(null)}/>}
+      {scanMode==="barcode"&&<BarcodeScanner onDetect={onBarcode} onClose={()=>setScanMode(null)}/>}
+
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(135deg,#001f3f,#003366)",padding:"16px 18px 13px",borderBottom:"1px solid #1e3a5f",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-15,right:-15,width:100,height:100,borderRadius:"50%",background:"radial-gradient(circle,rgba(0,212,170,0.15) 0%,transparent 70%)"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:5}}>
+          <div style={{background:"linear-gradient(135deg,#00d4aa,#00b4d8)",borderRadius:12,padding:"7px 9px",fontSize:20}}>🏷️</div>
+          <div><div style={{fontFamily:"'Syne',sans-serif",fontSize:"1.2rem",fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>NutriScore Analyser</div><div style={{fontSize:"0.64rem",color:"#7eb3d4"}}>FOP Rating 2023 · AI Vision + Barcode + Manual</div></div>
+        </div>
+      </div>
+
+      <div style={{padding:"14px",maxWidth:520,margin:"0 auto"}}>
+
+        {/* SCAN BUTTONS — two modes */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+
+          {/* Vision scan */}
+          <button onClick={()=>{setScanErr("");setScanMode("vision");}} className="vbtn"
+            style={{background:"linear-gradient(135deg,rgba(124,58,237,0.15),rgba(167,139,250,0.08))",border:"2px dashed #a78bfa60",borderRadius:14,padding:"14px 10px",cursor:"pointer",textAlign:"center",transition:"all 0.2s"}}>
+            <div style={{fontSize:"1.8rem",marginBottom:6}}>📸</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,color:"#a78bfa",fontSize:"0.82rem",marginBottom:3}}>Scan Food</div>
+            <div style={{fontSize:"0.62rem",color:"#7365a0",lineHeight:1.4}}>Point camera at any food — AI identifies & fills values</div>
+          </button>
+
+          {/* Barcode scan */}
+          <button onClick={()=>{setScanErr("");setScanMode("barcode");}} className="sbtn"
+            style={{background:"linear-gradient(135deg,rgba(0,212,170,0.12),rgba(0,180,216,0.08))",border:"2px dashed #00d4aa60",borderRadius:14,padding:"14px 10px",cursor:"pointer",textAlign:"center",transition:"all 0.2s"}}>
+            <div style={{fontSize:"1.8rem",marginBottom:6}}>📦</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,color:"#00d4aa",fontSize:"0.82rem",marginBottom:3}}>Scan Barcode</div>
+            <div style={{fontSize:"0.62rem",color:"#3a7060",lineHeight:1.4}}>Scan pack barcode → exact data from Open Food Facts</div>
+          </button>
+        </div>
+
+        {/* Scan mode info pill */}
+        <div style={{textAlign:"center",marginBottom:10}}>
+          <span style={{fontSize:"0.62rem",color:"#3a5070",background:"rgba(0,0,0,0.2)",padding:"4px 10px",borderRadius:20}}>
+            📸 Fresh/cooked food → AI Vision &nbsp;·&nbsp; 📦 Packaged food → Barcode
+          </span>
+        </div>
+
+        {scanLoad&&<div style={{background:"rgba(0,212,170,0.06)",border:"1px solid rgba(0,212,170,0.2)",borderRadius:10,padding:"11px 14px",display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:18,height:18,border:"2px solid #1e3a5f",borderTopColor:"#00d4aa",borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/><div style={{fontSize:"0.76rem",color:"#00d4aa"}}>Looking up barcode in Open Food Facts…</div></div>}
+        {scanErr&&<div style={{background:"rgba(231,76,60,0.08)",border:"1px solid #e74c3c40",borderRadius:10,padding:"9px 12px",fontSize:"0.73rem",color:"#e74c3c",marginBottom:10}}>⚠️ {scanErr}</div>}
+
+        {product&&(
+          <div className="fadein" style={{background:product.source==="vision"?"rgba(124,58,237,0.07)":"rgba(0,212,170,0.06)",border:`1px solid ${product.source==="vision"?"rgba(167,139,250,0.25)":"rgba(0,212,170,0.22)"}`,borderRadius:12,padding:"11px 12px",display:"flex",gap:10,alignItems:"center",marginBottom:10}}>
+            {product.imageUrl&&<img src={product.imageUrl} alt={product.name} style={{width:48,height:48,objectFit:"cover",borderRadius:8,border:"1px solid #1e3a5f",flexShrink:0}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,color:product.source==="vision"?"#a78bfa":"#00d4aa",fontSize:"0.82rem",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{product.name}</div>
+              {product.brand&&<div style={{fontSize:"0.68rem",color:"#7eb3d4"}}>{product.brand}</div>}
+              <div style={{fontSize:"0.63rem",color:"#4a8ab0",marginTop:2}}>{product.source==="vision"?"🤖 AI Vision identified":"✅ Open Food Facts data"}{product.confidence?` · ${product.confidence} confidence`:""}</div>
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+          <div style={{flex:1,height:1,background:"#1a3050"}}/><span style={{fontSize:"0.63rem",fontWeight:700,letterSpacing:1,color:"#3a6080"}}>OR ENTER MANUALLY</span><div style={{flex:1,height:1,background:"#1a3050"}}/>
+        </div>
+
+        {/* CATEGORY */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.67rem",color:"#7eb3d4",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Food Category</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            {[{id:"general",icon:"🍽️",l:"General Food"},{id:"fats",icon:"🫒",l:"Fats & Oils"},{id:"beverages",icon:"🥤",l:"Beverages"}].map(c=>(
+              <button key={c.id} onClick={()=>setCat(c.id)} style={{background:cat===c.id?"linear-gradient(135deg,rgba(0,212,170,0.22),rgba(0,180,216,0.15))":"rgba(255,255,255,0.03)",border:`1px solid ${cat===c.id?"#00d4aa":"#1e3a5f"}`,borderRadius:10,padding:"10px 6px",cursor:"pointer",textAlign:"center",color:cat===c.id?"#00d4aa":"#8aa4bf",transition:"all 0.2s"}}>
+                <div style={{fontSize:"1.3rem",marginBottom:3}}>{c.icon}</div><div style={{fontSize:"0.62rem",fontWeight:700,lineHeight:1.2}}>{c.l}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* INPUT FORM */}
+        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:14,padding:14,marginBottom:14}}>
+          <div style={{fontSize:"0.67rem",color:"#7eb3d4",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>📋 Values per 100g / 100ml</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {NCFG.map(n=>(
+              <div key={n.key}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><label style={{fontSize:"0.67rem",color:n.type==="pos"?"#00d4aa":"#f87171",fontWeight:700}}>{n.type==="pos"?"✚":"−"} {n.label}</label><span style={{fontSize:"0.62rem",color:"#4a8ab0"}}>{n.unit}</span></div>
+                <input type="number" min="0" step="0.1" placeholder={n.ph} value={inputs[n.key]} onChange={e=>hi(n.key,e.target.value)} style={{width:"100%",background:"rgba(0,0,0,0.3)",border:"1px solid #1e3a5f",borderRadius:7,padding:"7px 9px",color:"#e2e8f0",fontSize:"0.83rem",transition:"border-color 0.2s"}}/>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><label style={{fontSize:"0.67rem",color:"#00d4aa",fontWeight:700}}>✚ Fruits / Veg / Legumes</label><span style={{fontSize:"0.82rem",color:"#00d4aa",fontWeight:800}}>{inputs.fruitsVeg||0}%</span></div>
+            <input type="range" min="0" max="100" step="5" value={inputs.fruitsVeg||0} onChange={e=>hi("fruitsVeg",e.target.value)}/>
+          </div>
+          {cat==="beverages"&&<div style={{marginTop:12,display:"flex",gap:8}}>
+            {[{key:"isWater",l:"🚿 Pure Water",h:"Rated A always"},{key:"hasNNS",l:"🧪 Sweeteners",h:"+4 penalty pts"}].map(o=>(
+              <label key={o.key} style={{display:"flex",alignItems:"flex-start",gap:7,cursor:"pointer",flex:1,background:inputs[o.key]?"rgba(0,212,170,0.08)":"rgba(0,0,0,0.2)",border:`1px solid ${inputs[o.key]?"#00d4aa":"#1e3a5f"}`,borderRadius:10,padding:"8px 9px"}}>
+                <input type="checkbox" checked={inputs[o.key]} onChange={e=>hi(o.key,e.target.checked)} style={{marginTop:2,accentColor:"#00d4aa"}}/>
+                <div><div style={{fontSize:"0.67rem",fontWeight:700,color:inputs[o.key]?"#00d4aa":"#7eb3d4"}}>{o.l}</div><div style={{fontSize:"0.58rem",color:"#3a6080"}}>{o.h}</div></div>
+              </label>
+            ))}
+          </div>}
+        </div>
+
+        <button onClick={()=>doCalc()} className="cbtn" style={{width:"100%",background:"linear-gradient(135deg,#00d4aa,#00b4d8)",border:"none",borderRadius:13,padding:"15px",fontSize:"0.95rem",fontWeight:800,color:"#001f3f",cursor:"pointer",transition:"all 0.2s",marginBottom:18,fontFamily:"'Syne',sans-serif",boxShadow:"0 4px 20px rgba(0,212,170,0.22)"}}>
+          CALCULATE NUTRI-SCORE →
+        </button>
+
+        {/* RESULTS */}
+        {calcd&&result&&gi&&(
+          <div className="fadein">
+            <div style={{background:`linear-gradient(135deg,${gi.bg}18,${gi.bg}08)`,border:`1px solid ${gi.bg}50`,borderRadius:16,padding:"18px 14px",marginBottom:14,textAlign:"center"}}>
+              <div style={{display:"flex",justifyContent:"center",gap:7,marginBottom:12}}>
+                {["A","B","C","D","E"].map(g=>(
+                  <div key={g} style={{width:result.grade===g?52:38,height:result.grade===g?52:38,borderRadius:result.grade===g?12:9,background:result.grade===g?GRADES[g].bg:`${GRADES[g].bg}30`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontSize:result.grade===g?"1.4rem":"0.95rem",fontWeight:800,color:result.grade===g?GRADES[g].text:`${GRADES[g].text}60`,transition:"all 0.3s",boxShadow:result.grade===g?`0 0 18px ${GRADES[g].bg}60`:"none",transform:result.grade===g?"scale(1.08)":"scale(1)"}}>{g}</div>
+                ))}
+              </div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:"1.25rem",fontWeight:800,color:gi.bg,marginBottom:3}}>{gi.emoji} {gi.label}</div>
+              <div style={{fontSize:"0.75rem",color:"#8aa4bf",marginBottom:10}}>{gi.desc}</div>
+              <div style={{display:"inline-flex",gap:0,background:"rgba(0,0,0,0.3)",borderRadius:10,overflow:"hidden"}}>
+                {[{l:"N Points",v:result.N,c:"#f87171"},{l:"P Points",v:result.P,c:"#00d4aa"},{l:"Final Score",v:result.finalScore,c:gi.bg}].map((s,i,a)=>(
+                  <div key={s.l} style={{display:"flex",alignItems:"center"}}>
+                    <div style={{padding:"8px 14px",textAlign:"center"}}><div style={{fontSize:"1.3rem",fontWeight:800,color:s.c,fontFamily:"'Syne',sans-serif"}}>{s.v}</div><div style={{fontSize:"0.6rem",color:"#7eb3d4"}}>{s.l}</div></div>
+                    {i<a.length-1&&<div style={{width:1,height:40,background:"#1e3a5f"}}/>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* TABS */}
+            <div style={{display:"flex",gap:4,marginBottom:12,background:"rgba(0,0,0,0.28)",borderRadius:12,padding:4}}>
+              {TABS.map(t=>(
+                <button key={t.id} onClick={()=>setTab(t.id)} className="tbtn" style={{flex:1,background:tab===t.id?"rgba(0,212,170,0.18)":"transparent",border:`1px solid ${tab===t.id?"#00d4aa35":"transparent"}`,borderRadius:8,padding:"6px 3px",cursor:"pointer",fontSize:"0.57rem",fontWeight:700,color:tab===t.id?"#00d4aa":"#4a8ab0",transition:"all 0.2s",textAlign:"center"}}>
+                  <span style={{display:"block",fontSize:"0.82rem",marginBottom:2}}>{t.icon}</span>{t.id==="warnings"&&warns.length>0?`Warnings(${warns.length})`:t.label}
+                </button>
+              ))}
+            </div>
+
+            {tab==="score"&&(
+              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:14}}>
+                <div style={{fontSize:"0.67rem",color:"#f87171",fontWeight:700,marginBottom:7}}>⬆️ UNFAVORABLE (N = {result.N})</div>
+                {Object.entries(result.neg).map(([k,v])=>{const L={energy:"Energy",sugars:"Sugars",saturatedFat:"Sat. Fat",salt:"Salt",nns:"Sweeteners"},M={energy:10,sugars:15,saturatedFat:10,salt:20,nns:4};return(<div key={k} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontSize:"0.7rem",color:"#a0b4c4"}}>{L[k]}</span><span style={{fontSize:"0.7rem",fontWeight:700,color:v>0?"#f87171":"#4a8ab0"}}>{v}/{M[k]}</span></div><div style={{height:5,background:"#0a1628",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${(v/M[k])*100}%`,background:v>=M[k]*0.7?"#e74c3c":v>=M[k]*0.4?"#f39c12":"#00d4aa",borderRadius:3}}/></div></div>);})}
+                <div style={{fontSize:"0.67rem",color:"#00d4aa",fontWeight:700,margin:"10px 0 7px"}}>⬇️ FAVORABLE (P = {result.P})</div>
+                {Object.entries(result.pos).map(([k,v])=>{const L={protein:"Protein",fiber:"Fiber",fruitsVeg:"Fruits/Veg"},M={protein:7,fiber:5,fruitsVeg:5};return(<div key={k} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{fontSize:"0.7rem",color:"#a0b4c4"}}>{L[k]}</span><span style={{fontSize:"0.7rem",fontWeight:700,color:v>0?"#00d4aa":"#4a8ab0"}}>{v}/{M[k]}</span></div><div style={{height:5,background:"#0a1628",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${(v/M[k])*100}%`,background:"#00d4aa",borderRadius:3}}/></div></div>);})}
+                {result.usedP!==undefined&&result.N>=11&&<div style={{background:"rgba(247,201,24,0.07)",border:"1px solid rgba(247,201,24,0.2)",borderRadius:7,padding:"7px 9px",marginTop:8,fontSize:"0.64rem",color:"#f1c40f"}}>ⓘ N ≥ 11: Protein excluded per 2023 algorithm rule.</div>}
+              </div>
+            )}
+            {tab==="nutrients"&&(
+              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:14}}>
+                <div style={{fontSize:"0.68rem",color:"#7eb3d4",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Nutritional Profile per 100g</div>
+                {[{l:"Energy",v:`${inputs.energyKcal||0}kcal`,rv:inputs.energyKcal,rm:2000,c:"#f87171"},{l:"Total Fat",v:`${inputs.totalFat||0}g`,rv:inputs.totalFat,rm:67,c:"#fbbf24"},{l:"Saturated Fat",v:`${inputs.saturatedFat||0}g`,rv:inputs.saturatedFat,rm:22,c:"#f97316"},{l:"Sugars",v:`${inputs.sugars||0}g`,rv:inputs.sugars,rm:50,c:"#e879f9"},{l:"Salt",v:`${inputs.salt||0}g`,rv:inputs.salt,rm:5,c:"#60a5fa"},{l:"Protein",v:`${inputs.protein||0}g`,rv:inputs.protein,rm:50,c:"#34d399"},{l:"Fiber",v:`${inputs.fiber||0}g`,rv:inputs.fiber,rm:25,c:"#00d4aa"}].map(n=>{const pct=Math.min(100,((parseFloat(n.rv)||0)/n.rm)*100);return(<div key={n.l} style={{display:"flex",alignItems:"center",gap:9,marginBottom:7,padding:"7px 9px",background:"rgba(0,0,0,0.2)",borderRadius:9}}><div style={{minWidth:82,fontSize:"0.7rem",color:"#8aa4bf",fontWeight:600}}>{n.l}</div><div style={{flex:1}}><div style={{height:7,background:"#0a1628",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:pct>80?"#e74c3c":pct>50?"#f39c12":n.c,borderRadius:4}}/></div><div style={{fontSize:"0.58rem",color:"#3a6080",marginTop:1}}>{Math.round(pct)}% daily RDA</div></div><div style={{minWidth:52,textAlign:"right",fontSize:"0.76rem",fontWeight:700,color:n.c}}>{n.v}</div></div>);})}
+              </div>
+            )}
+            {tab==="warnings"&&(
+              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:14}}>
+                <div style={{fontSize:"0.68rem",color:"#7eb3d4",fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⚠️ Health Warnings</div>
+                {warns.length===0?(<div style={{textAlign:"center",padding:"16px"}}><div style={{fontSize:"2rem",marginBottom:8}}>✅</div><div style={{fontWeight:700,color:"#00d4aa"}}>No warnings triggered</div></div>):warns.map(w=>(
+                  <div key={w.id} className={`w${w.level[0]}`} style={{background:w.level==="high"?"rgba(231,76,60,0.07)":"rgba(243,156,18,0.07)",borderRadius:9,padding:"9px 11px",marginBottom:7,border:"1px solid transparent"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><div style={{fontWeight:700,fontSize:"0.8rem",color:w.level==="high"?"#e74c3c":"#f39c12"}}>{w.icon} {w.label}</div><span style={{fontSize:"0.62rem",background:w.level==="high"?"#e74c3c18":"#f39c1218",color:w.level==="high"?"#e74c3c":"#f39c12",padding:"2px 6px",borderRadius:4,fontWeight:700}}>{w.level.toUpperCase()}</span></div>
+                    <div style={{fontSize:"0.66rem",color:"#8aa4bf"}}>Value: {w.val} · Limit: {w.limit}</div>
+                    <div style={{fontSize:"0.66rem",color:"#f87171",marginTop:2}}>⚠ Risk: {w.risk}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {tab==="ai"&&(
+              <div>
+                {!aiRec&&!aiLoad&&<div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:18,textAlign:"center"}}><div style={{fontSize:"2.3rem",marginBottom:10}}>🤖</div><div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,color:"#e2e8f0",fontSize:"0.95rem",marginBottom:7}}>AI Nutrition Advisor</div><div style={{fontSize:"0.72rem",color:"#7eb3d4",marginBottom:14,lineHeight:1.6}}>Evidence-based assessment, risks & healthier alternatives.</div><button onClick={doAI} style={{background:"linear-gradient(135deg,rgba(0,212,170,0.18),rgba(0,180,216,0.12))",border:"1px solid #00d4aa50",borderRadius:11,padding:"11px 22px",color:"#00d4aa",fontSize:"0.82rem",fontWeight:700,cursor:"pointer",fontFamily:"'Syne',sans-serif"}}>🔍 Get AI Health Insights</button></div>}
+                {aiLoad&&<div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:22,textAlign:"center"}}><div style={{display:"inline-block",width:32,height:32,border:"3px solid #1e3a5f",borderTopColor:"#00d4aa",borderRadius:"50%",animation:"spin 0.8s linear infinite",marginBottom:10}}/><div style={{color:"#7eb3d4",fontSize:"0.78rem"}}>Analysing…</div></div>}
+                {aiRec&&<div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #1e3a5f",borderRadius:13,padding:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:"0.68rem",color:"#7eb3d4",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>🤖 AI Health Insights</div><button onClick={doAI} style={{background:"rgba(0,212,170,0.08)",border:"1px solid #00d4aa35",borderRadius:6,padding:"3px 9px",color:"#00d4aa",fontSize:"0.62rem",cursor:"pointer",fontWeight:700}}>Refresh</button></div><div className="aic" style={{fontSize:"0.76rem",lineHeight:1.7,color:"#c4d4e0"}} dangerouslySetInnerHTML={{__html:aiRec.replace(/^##\s(.+)$/gm,'<h2>$1</h2>').replace(/\*\*(.+?)\*\*/g,'<strong style="color:#00d4aa">$1</strong>').replace(/^- (.+)$/gm,'<li>$1</li>').replace(/\n\n/g,'<br/>')}}/><div style={{marginTop:10,padding:"7px 9px",background:"rgba(0,0,0,0.2)",borderRadius:7,fontSize:"0.58rem",color:"#3a6080"}}>⚠ AI insights are informational only. Consult a registered dietitian for personal advice.</div></div>}
+              </div>
+            )}
+            {tab!=="ai"&&!aiLoad&&<button onClick={()=>{setTab("ai");if(!aiRec)doAI();}} style={{width:"100%",background:"rgba(0,212,170,0.05)",border:"1px dashed #00d4aa28",borderRadius:11,padding:"11px",color:"#00d4aa",fontSize:"0.76rem",fontWeight:700,cursor:"pointer",marginTop:12,fontFamily:"'Syne',sans-serif"}}>🤖 Get AI Health Recommendations & Better Alternatives →</button>}
+          </div>
+        )}
+
+        <div style={{marginTop:18,padding:"9px",borderTop:"1px solid #0d2137",textAlign:"center",fontSize:"0.58rem",color:"#2a4a6a",lineHeight:1.8}}>
+          Algorithm: Nutri-Score 2023 · Merz et al., Nature Food 2024 · IARC Brief No.2<br/>
+          Vision: Claude AI · Barcode Data: Open Food Facts · Thresholds: CWO Phase 3, WHO Euro 2023, FSSAI
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
